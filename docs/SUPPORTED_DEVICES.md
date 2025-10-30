@@ -54,7 +54,6 @@ Based on the CSNet Manager system, devices are categorized by **Unit Model** and
 |--------|------------|----------|---------------|-------------|-----|---------------------|--------------|
 | @mmornati | Yutaki S | H-0302 | 2 (C1, C2 - Floor Heating) | 2 (1 per floor) | ➖ N/A | Latest | 2025-10-24 |
 | @Aparenty-1977 | Yutaki S2 | ❓ Unknown | ✅ | ❓ Unknown | ✅ Yutampo | Latest | 2025-10-26 |
-
 | *Add your config* | | | | | | | |
 
 ### Feature Compatibility
@@ -80,18 +79,21 @@ Based on the CSNet Manager system, devices are categorized by **Unit Model** and
 
 | Tester | Unit Model | Firmware | Heat Circuits | Thermostats | DHW | Integration Version | Last Updated |
 |--------|------------|----------|---------------|-------------|-----|---------------------|--------------|
+| @davigar | Yutaki S Combi | H-0222 (Interior PCB) | 2 (C1, C2 - Floor Heating) - Fancoil for cooling | 2 | Integrated | Latest | 2025-10-30 |
 | *Add your config* | Yutaki SC | | | | | | |
 
 ### Feature Compatibility
 
 | Tester | Climate Control | Temperature Set | HVAC Modes | Preset Modes | DHW Control | Silent Mode | Fan Control | Alarm Monitor | OTC Support | Multi-Zone |
 |--------|----------------|-----------------|------------|--------------|-------------|-------------|-------------|---------------|-------------|------------|
+| @davigar| ✅ | ✅ | ✅ Heat/Cool/Auto/Off | ✅ Eco/Comfort | ✅ Working | ➖ N/A | ❓ Unknown | ✅ | ✅ | ✅ 2 zones/2 thermostats |
 | *Add your results* | | | | | | | | | | |
 
 ### Known Issues & Notes
 
 | Tester | Issues / Notes |
 |--------|----------------|
+| @davigar| Working perfectly, when Fancoil control will be implemented I can test it, Controller firmware H-0272, ATW-IOT-01 firmware H-0302, PCB Firmware H-0222 |
 | *Add your notes* | |
 
 ---
