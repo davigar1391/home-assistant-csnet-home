@@ -20,9 +20,11 @@ from custom_components.csnet_home.const import (
     HEAT_SETTINGS_PATH,
     LOGIN_PATH,
     LANGUAGE_FILES,
-    HEATING_MAX_TEMPERATURE,
-    WATER_CIRCUIT_MAX_HEAT,
-    WATER_HEATER_MAX_TEMPERATURE,
+)
+from .helpers import (
+    extract_heating_setting,
+    extract_heating_status,
+    has_fan_coil_support,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -322,26 +324,7 @@ class CSNetHomeAPI:
         Returns:
             dict or None: heatingStatus dictionary, or None if not found
         """
-        if not installation_devices_data:
-            return None
-
-        # Try direct access first (if already extracted)
-        heating_status = installation_devices_data.get("heatingStatus")
-        if heating_status:
-            return heating_status
-
-        # Navigate through: data[0].indoors[0].heatingStatus
-        data_array = installation_devices_data.get("data", [])
-        if isinstance(data_array, list) and len(data_array) > 0:
-            first_device = data_array[0]
-            if isinstance(first_device, dict):
-                indoors_array = first_device.get("indoors", [])
-                if isinstance(indoors_array, list) and len(indoors_array) > 0:
-                    first_indoors = indoors_array[0]
-                    if isinstance(first_indoors, dict):
-                        return first_indoors.get("heatingStatus", {})
-
-        return None
+        return extract_heating_status(installation_devices_data)
 
     def get_heating_setting_from_installation_devices(self, installation_devices_data):
         """Extract heatingSetting from installation devices data structure.
@@ -354,54 +337,7 @@ class CSNetHomeAPI:
         Returns:
             dict or None: heatingSetting dictionary, or None if not found
         """
-        if not installation_devices_data:
-            return None
-
-        # Try direct access first (if already extracted)
-        heating_setting = installation_devices_data.get("heatingSetting")
-        if heating_setting:
-            return heating_setting
-
-        # Navigate through: data[0].indoors[0].heatingSetting
-        data_array = installation_devices_data.get("data", [])
-        if isinstance(data_array, list) and len(data_array) > 0:
-            first_device = data_array[0]
-            if isinstance(first_device, dict):
-                indoors_array = first_device.get("indoors", [])
-                if isinstance(indoors_array, list) and len(indoors_array) > 0:
-                    first_indoors = indoors_array[0]
-                    if isinstance(first_indoors, dict):
-                        return first_indoors.get("heatingSetting", {})
-
-        return None
-
-    def _validate_value(self, value, default):
-        """Validate temperature limit value matching JavaScript validateValue logic.
-
-        Args:
-            value: The value to validate (can be None, int, float)
-            default: The default value to return if validation fails
-
-        Returns:
-            The validated value or default if value is None, 0, or -1
-
-        This matches the JavaScript validateValue function:
-        function validateValue(v, def) {
-            if (v != null && v != undefined && v != 0 && v != -1)
-                return v;
-            return def;
-        }
-        """
-        if value is None:
-            return default
-        try:
-            val = float(value)
-            # Check if value is 0 or -1 (invalid sentinel values)
-            if val == 0 or val == -1:
-                return default
-            return val
-        except (TypeError, ValueError):
-            return default
+        return extract_heating_setting(installation_devices_data)
 
     def get_temperature_limits(self, zone_id, mode, installation_devices_data):
         """Extract temperature limits from installation devices data.
@@ -438,64 +374,36 @@ class CSNetHomeAPI:
 
         if zone_id == 1:  # Air circuit 1 (C1_AIR)
             if is_heating:
-                raw_min = heating_status.get("heatAirMinC1")
-                raw_max = heating_status.get("heatAirMaxC1")
-                # Validate with RTU_MAX default (35°C) - JavaScript multiplies by 10, but we work in Celsius
-                max_temp = self._validate_value(raw_max, HEATING_MAX_TEMPERATURE)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("heatAirMinC1")
+                max_temp = heating_status.get("heatAirMaxC1")
             else:
-                raw_min = heating_status.get("coolAirMinC1")
-                raw_max = heating_status.get("coolAirMaxC1")
-                # Validate with RTU_MAX default (35°C)
-                max_temp = self._validate_value(raw_max, HEATING_MAX_TEMPERATURE)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("coolAirMinC1")
+                max_temp = heating_status.get("coolAirMaxC1")
         elif zone_id == 2:  # Air circuit 2 (C2_AIR)
             if is_heating:
-                raw_min = heating_status.get("heatAirMinC2")
-                raw_max = heating_status.get("heatAirMaxC2")
-                # Validate with RTU_MAX default (35°C)
-                max_temp = self._validate_value(raw_max, HEATING_MAX_TEMPERATURE)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("heatAirMinC2")
+                max_temp = heating_status.get("heatAirMaxC2")
             else:
-                raw_min = heating_status.get("coolAirMinC2")
-                raw_max = heating_status.get("coolAirMaxC2")
-                # Validate with RTU_MAX default (35°C)
-                max_temp = self._validate_value(raw_max, HEATING_MAX_TEMPERATURE)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("coolAirMinC2")
+                max_temp = heating_status.get("coolAirMaxC2")
         elif zone_id == 5:  # Water circuit 1 (C1_WATER)
             if is_heating:
-                raw_min = heating_status.get("heatMinC1")
-                raw_max = heating_status.get("heatMaxC1")
-                # Validate with C1_MAX_HEAT default (80°C)
-                max_temp = self._validate_value(raw_max, WATER_CIRCUIT_MAX_HEAT)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("heatMinC1")
+                max_temp = heating_status.get("heatMaxC1")
             else:
-                raw_min = heating_status.get("coolMinC1")
-                raw_max = heating_status.get("coolMaxC1")
-                # Validate with C1_MAX_COOL default - not defined in constants, use same as heat for now
-                # Note: JavaScript uses C1_MAX_COOL which may differ, but not available in our constants
-                max_temp = self._validate_value(raw_max, WATER_CIRCUIT_MAX_HEAT)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("coolMinC1")
+                max_temp = heating_status.get("coolMaxC1")
         elif zone_id == 6:  # Water circuit 2 (C2_WATER)
             if is_heating:
-                raw_min = heating_status.get("heatMinC2")
-                raw_max = heating_status.get("heatMaxC2")
-                # Validate with C2_MAX_HEAT default (80°C)
-                max_temp = self._validate_value(raw_max, WATER_CIRCUIT_MAX_HEAT)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("heatMinC2")
+                max_temp = heating_status.get("heatMaxC2")
             else:
-                raw_min = heating_status.get("coolMinC2")
-                raw_max = heating_status.get("coolMaxC2")
-                # Validate with C2_MAX_COOL default - not defined in constants, use same as heat for now
-                # Note: JavaScript uses C2_MAX_COOL which may differ, but not available in our constants
-                max_temp = self._validate_value(raw_max, WATER_CIRCUIT_MAX_HEAT)
-                min_temp = raw_min  # Min doesn't have a default in JS code
+                min_temp = heating_status.get("coolMinC2")
+                max_temp = heating_status.get("coolMaxC2")
         elif zone_id == 3:  # DHW (water heater)
             # DHW typically only has a max limit, min is constant
-            raw_max = heating_status.get("dhwMax")
-            # Validate with DHW_MAX default (80°C)
-            max_temp = self._validate_value(raw_max, WATER_HEATER_MAX_TEMPERATURE)
-            # Min is typically 30 for DHW, not provided by API
+            max_temp = heating_status.get("dhwMax")
+            # Min is typically 30 for DHW
 
         return (min_temp, max_temp)
 
@@ -1020,11 +928,10 @@ class CSNetHomeAPI:
         heating_status = self.get_heating_status_from_installation_devices(
             installation_devices_data
         )
-        if not heating_status:
-            return False
-
-        system_config_bits = heating_status.get("systemConfigBits", 0)
-        return (system_config_bits & 0x2000) > 0
+        heating_setting = self.get_heating_setting_from_installation_devices(
+            installation_devices_data
+        )
+        return has_fan_coil_support(heating_status, heating_setting)
 
     def get_fan_control_availability(
         self, circuit: int, mode: int, installation_devices_data
@@ -1039,18 +946,39 @@ class CSNetHomeAPI:
         Returns:
             bool: True if fan control is available
         """
-        if not self.is_fan_coil_compatible(installation_devices_data):
+        if not installation_devices_data:
             return False
 
         heating_status = self.get_heating_status_from_installation_devices(
             installation_devices_data
         )
-        if not heating_status:
+        heating_setting = self.get_heating_setting_from_installation_devices(
+            installation_devices_data
+        )
+
+        if not has_fan_coil_support(heating_status, heating_setting):
+            return False
+
+        if not isinstance(heating_status, dict):
             return False
 
         # Get the fan control flag for the circuit
         fan_control_key = f"fan{circuit}ControlledOnLCD"
         fan_controlled = heating_status.get(fan_control_key, 0)
+
+        # Check if fan speed field exists in heatingSetting (fallback for older units)
+        # If it exists, allow control even if LCD flags are 0
+        fan_speed_key = f"fan{circuit}Speed"
+        has_fan_speed_field = (
+            isinstance(heating_setting, dict)
+            and fan_speed_key in heating_setting
+            and isinstance(heating_setting[fan_speed_key], int)
+            and heating_setting[fan_speed_key] >= 0
+        )
+
+        # If fan speed field exists but LCD flag is 0, allow control (older firmware)
+        if has_fan_speed_field and fan_controlled == 0:
+            return True
 
         # fanXControlledOnLCD values: 0=No, 1=Heating, 2=Cooling, 3=Heating+Cooling
         if mode == 1:  # Heat mode

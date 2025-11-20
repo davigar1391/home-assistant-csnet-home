@@ -20,6 +20,7 @@ from .const import (
     WATER_CIRCUIT_MAX_HEAT,
     WATER_CIRCUIT_MIN_HEAT,
     CONF_MAX_TEMP_OVERRIDE,
+    # --- MODIFICADO: Ahora importamos los mapas específicos y las constantes del modelo ---
     FAN_SPEED_MAP_STANDARD,
     FAN_SPEED_REVERSE_MAP_STANDARD,
     FAN_SPEED_MAP_LEGACY,
@@ -27,6 +28,7 @@ from .const import (
     CONF_FAN_COIL_MODEL,
     FAN_COIL_MODEL_LEGACY,
     DEFAULT_FAN_COIL_MODEL,
+    # Mantenemos las constantes originales por si se usan en helpers no mostrados, pero ya no se usan directamente aquí
     # FAN_SPEED_MAP,
     # FAN_SPEED_REVERSE_MAP,
     OPERATION_STATUS_MAP,
@@ -94,10 +96,9 @@ class CSNetHomeClimate(ClimateEntity):
         cloud_api = self.hass.data[DOMAIN][self.entry.entry_id]["api"]
         self._is_fan_coil = cloud_api.is_fan_coil_compatible(installation_devices_data)
 
-        # Determine Fan Coil type
-        self._fan_model = self.entry.data.get(
-            CONF_FAN_COIL_MODEL, DEFAULT_FAN_COIL_MODEL
-        )
+        # --- INICIO DE CAMBIOS PARA FAN COIL MODELO/ESTADO ---
+        # 1. Determinar el modelo de fancoil desde la configuración
+        self._fan_model = self.entry.data.get(CONF_FAN_COIL_MODEL, DEFAULT_FAN_COIL_MODEL)
 
         if self._fan_model == FAN_COIL_MODEL_LEGACY:
             self._fan_speed_map = FAN_SPEED_MAP_LEGACY
@@ -106,6 +107,7 @@ class CSNetHomeClimate(ClimateEntity):
             self._fan_speed_map = FAN_SPEED_MAP_STANDARD
             self._fan_speed_reverse_map = FAN_SPEED_REVERSE_MAP_STANDARD
 
+        # 2. Set fan modes based on system type, usando el mapa dinámico
         if self._is_fan_coil:
             # Fan coil systems use fan speed control
             self._attr_fan_modes = list(self._fan_speed_map.keys())
@@ -113,8 +115,10 @@ class CSNetHomeClimate(ClimateEntity):
             # Non-fan coil systems use silent mode (auto = normal, on = silent)
             self._attr_fan_modes = [FAN_AUTO, FAN_ON]
 
+        # 3. Inicializar el estado asumido del ventilador (para retener el estado manual)
         self._assumed_fan_mode = self._get_fan_mode_from_data()
-
+        # --- FIN DE CAMBIOS PARA FAN COIL MODELO/ESTADO ---
+        
         self._attr_supported_features = (
             ClimateEntityFeature.PRESET_MODE
             | ClimateEntityFeature.TARGET_TEMPERATURE
@@ -126,13 +130,14 @@ class CSNetHomeClimate(ClimateEntity):
         # cache for dynamically computed limits
         self._cached_limits: tuple[float | None, float | None] | None = None
 
+    # --- NUEVO MÉTODO HELPER PARA OBTENER EL MODO DE LA API ---
     def _get_fan_mode_from_data(self):
-        """Helper to read the fan mode from the raw API data."""
+        """Helper para leer el modo de ventilador de los datos brutos de la API."""
         if self._sensor_data is None:
             return FAN_AUTO if not self._is_fan_coil else "auto"
 
         if self._is_fan_coil:
-            # Fan speed for fan coil
+            # Para sistemas Fan Coil, devolver la velocidad del ventilador
             zone_id = self._sensor_data.get("zone_id")
             circuit = 1 if zone_id == 1 else 2
 
@@ -140,10 +145,11 @@ class CSNetHomeClimate(ClimateEntity):
             fan_speed = self._sensor_data.get(fan_speed_key)
 
             if fan_speed is not None and fan_speed >= 0:
+                # Usamos el mapa dinámico
                 return self._fan_speed_reverse_map.get(fan_speed, "auto")
             return "auto"
 
-        # Silent mode for non fan coil systems
+        # Para sistemas sin Fan Coil, devolver el estado del modo silencioso
         silent_mode = self._sensor_data.get("silent_mode")
         # silent_mode: 0 = Off (auto), 1 = On (silent)
         if silent_mode == 1:
@@ -190,6 +196,7 @@ class CSNetHomeClimate(ClimateEntity):
     @property
     def fan_mode(self):
         """Return the current fan mode (fan speed for fan coil, silent mode otherwise)."""
+        # --- MODIFICADO: Devolvemos el estado asumido (el último que seleccionó el usuario) ---
         return self._assumed_fan_mode
 
     @property
@@ -306,7 +313,7 @@ class CSNetHomeClimate(ClimateEntity):
             "c2_demand": self._sensor_data.get("c2_demand"),
             "doingBoost": self._sensor_data.get("doingBoost"),
             "silent_mode": self._sensor_data.get("silent_mode"),
-            # --- ADDED: Include Fan Coil model for debugging ---
+            # --- AÑADIDO: Incluir el modelo de Fan Coil para debugging ---
             "fan_coil_model": self._fan_model,
         }
 
@@ -464,6 +471,7 @@ class CSNetHomeClimate(ClimateEntity):
 
         if self._is_fan_coil:
             # For fan coil systems, set the fan speed
+            # Usamos el mapa dinámico (self._fan_speed_map)
             if fan_mode not in self._fan_speed_map:
                 _LOGGER.warning("Invalid fan mode %s for fan coil system", fan_mode)
                 return
@@ -495,6 +503,7 @@ class CSNetHomeClimate(ClimateEntity):
                 circuit,
             )
             if response:
+                # --- MODIFICADO: Solo guardamos el estado asumido ---
                 self._assumed_fan_mode = fan_mode
         else:
             # For non-fan coil systems, set silent mode
@@ -507,6 +516,7 @@ class CSNetHomeClimate(ClimateEntity):
                 silent_mode,
             )
             if response:
+                # --- MODIFICADO: Solo guardamos el estado asumido ---
                 self._assumed_fan_mode = fan_mode
 
     def is_heating(self):
@@ -537,7 +547,7 @@ class CSNetHomeClimate(ClimateEntity):
         coordinator = self.hass.data[DOMAIN][self.entry.entry_id]["coordinator"]
         if not coordinator:
             _LOGGER.error("No coordinator instance found!")
-            return
+            return # Añadido 'return'
         await coordinator.async_request_refresh()
         self._sensor_data = next(
             (
@@ -552,23 +562,28 @@ class CSNetHomeClimate(ClimateEntity):
                 "No sensor data found for room %s after coordinator refresh",
                 self._attr_name,
             )
-            return
+            return # Añadido 'return'
 
-        # Obtain real state from API
+        # --- INICIO DE LA NUEVA LÓGICA DE RETENCIÓN DE ESTADO ---
+        # Obtener el estado real del ventilador según la API
         api_fan_mode = self._get_fan_mode_from_data()
 
-        # Save current speed for Legacy Control
+        # Lógica de retención de estado SOLO para el modelo LEGACY en fancoil
         if (
             self._is_fan_coil
             and self._fan_model == FAN_COIL_MODEL_LEGACY
             and api_fan_mode == "auto"
-            and self._assumed_fan_mode
-            not in ["auto", None]
+            and self._assumed_fan_mode not in ["auto", None] # Si es manual (low, medium, high)
         ):
-            # Preserve the cached assumed fan mode; do not update it when in legacy mode and API reports 'auto'
+            # Si la API reporta 'auto' pero nosotros sabemos que se puso manualmente otro modo,
+            # mantenemos nuestro estado asumido para evitar el parpadeo de vuelta a 'auto'.
             pass
         else:
+            # En cualquier otro caso (Standard model, no fancoil, o la API no reporta 'auto'),
+            # confiamos en el estado de la API.
             self._assumed_fan_mode = api_fan_mode
+            
+        # --- FIN DE LA NUEVA LÓGICA DE RETENCIÓN DE ESTADO ---
 
         self._common_data = coordinator.get_common_data()
         # reset cached limits after data refresh

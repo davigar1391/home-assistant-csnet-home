@@ -12,10 +12,12 @@ from .const import (
     CONF_LANGUAGE,
     DEFAULT_LANGUAGE,
     CONF_MAX_TEMP_OVERRIDE,
+    # --- AÑADIDO ---
     CONF_FAN_COIL_MODEL,
     FAN_COIL_MODEL_STANDARD,
     FAN_COIL_MODEL_LEGACY,
     DEFAULT_FAN_COIL_MODEL,
+    # ---------------
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ class CsnetHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self):
         """Initialize the config flow."""
+        # Se elimina el almacenamiento interno de variables ya que no es necesario
         pass
 
     async def async_step_user(self, user_input=None):
@@ -42,10 +45,8 @@ class CsnetHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
                     CONF_LANGUAGE: user_input.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
                     CONF_MAX_TEMP_OVERRIDE: user_input.get(CONF_MAX_TEMP_OVERRIDE),
-                    # Store the Fan coil control type
-                    CONF_FAN_COIL_MODEL: user_input.get(
-                        CONF_FAN_COIL_MODEL, DEFAULT_FAN_COIL_MODEL
-                    ),
+                    # --- AÑADIDO: Guardar la selección del modelo de fancoil ---
+                    CONF_FAN_COIL_MODEL: user_input.get(CONF_FAN_COIL_MODEL, DEFAULT_FAN_COIL_MODEL),
                 },
             )
 
@@ -64,7 +65,7 @@ class CsnetHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_MAX_TEMP_OVERRIDE): vol.All(
                         vol.Coerce(int), vol.Range(min=8, max=80)
                     ),
-                    # Selection of Fan coil control type
+                    # --- AÑADIDO: Campo para elegir el modelo de fancoil ---
                     vol.Optional(
                         CONF_FAN_COIL_MODEL, default=DEFAULT_FAN_COIL_MODEL
                     ): vol.In([FAN_COIL_MODEL_STANDARD, FAN_COIL_MODEL_LEGACY]),

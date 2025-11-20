@@ -9,11 +9,12 @@ INSTALLATION_ALARMS_PATH = "/data/installationalarms"
 HEAT_SETTINGS_PATH = "/data/indoor/heat_setting"
 CONF_ENABLE_DEVICE_LOGGING = "enable_device_logging"
 CONF_MAX_TEMP_OVERRIDE = "max_temp_override"
+# --- NUEVAS CONSTANTES AÑADIDAS ---
 CONF_FAN_COIL_MODEL = "fan_coil_model"
-FAN_COIL_MODEL_STANDARD = "standard"  
-FAN_COIL_MODEL_LEGACY = "legacy"  
+FAN_COIL_MODEL_STANDARD = "standard"  # Modelo nuevo (Off, Low, Medium, Auto)
+FAN_COIL_MODEL_LEGACY = "legacy"    # Modelo viejo (Low, Medium, High, Auto)
 DEFAULT_FAN_COIL_MODEL = FAN_COIL_MODEL_STANDARD
-
+# -----------------------------------
 COMMON_API_HEADERS = {
     "accept-language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
     "cache-control": "no-cache",
@@ -40,7 +41,9 @@ FAN_SPEED_LOW = "1"
 FAN_SPEED_MEDIUM = "2"
 FAN_SPEED_AUTO = "3"
 
-# Standard
+# --- MAPAS DE VELOCIDAD DE VENTILADOR (FAN COIL) ---
+
+# Modelo Estándar (el que ya tenías)
 FAN_SPEED_MAP_STANDARD = {
     "off": 0,
     "low": 1,
@@ -55,7 +58,7 @@ FAN_SPEED_REVERSE_MAP_STANDARD = {
     3: "auto",
 }
 
-# Legacy
+# Modelo Legacy (el nuevo: Low=0, Medium=1, High=2, Auto=3, sin Off)
 FAN_SPEED_MAP_LEGACY = {
     "low": 0,
     "medium": 1,
@@ -70,6 +73,7 @@ FAN_SPEED_REVERSE_MAP_LEGACY = {
     3: "auto",
 }
 
+# Mantenemos las originales por compatibilidad, apuntando al estándar
 FAN_SPEED_MAP = FAN_SPEED_MAP_STANDARD
 FAN_SPEED_REVERSE_MAP = FAN_SPEED_REVERSE_MAP_STANDARD
 
