@@ -665,6 +665,9 @@ class UnitHeatCounter(ProducedEnergyCounter):
         """Initialize; it is fed the counter of each new reading."""
         super().__init__(hass, entry_id, storage_key=unit_heat_storage_key(entry_id))
         self._last_reading: int | None = None
+        # A reading out of line with the last one, waiting for the next to tell
+        # a stray value from the counter being reset
+        self._unconfirmed: tuple[datetime, int] | None = None
         # whether the counter ever rose: a unit whose counter stands still gets no sensors
         self.has_counted = False
 
@@ -676,25 +679,36 @@ class UnitHeatCounter(ProducedEnergyCounter):
 
     @staticmethod
     def rise(previous: int, reading: int, hours: float = 0.0) -> int | None:
-        """Return the kWh between two readings `hours` apart, or None when the counter was reset.
+        """Return the kWh between two readings `hours` apart, or None when they cannot both be the counter.
 
         A drop is the counter starting over when the kWh across the wrap are few
         (249, then 2), or no more than the unit can make in the time between the
         readings (150, then 20 after a night without readings). A small step back
         near the top (245, then 244) is no wrap: it would mean 249 kWh in minutes.
+        A rise is bounded the same way: 34, then 230 a minute later, is no heat
+        the unit made, but a stray reading on one side or the other.
         """
+        most = max(UNIT_HEAT_COUNTER_WRAP_MARGIN, UNIT_HEAT_MAX_KW * hours)
         if reading >= previous:
-            return reading - previous
+            return reading - previous if reading - previous <= most else None
         wrap = UNIT_HEAT_COUNTER_WRAP if previous < UNIT_HEAT_COUNTER_WRAP else 256
         across = wrap - previous + reading
-        if across <= max(UNIT_HEAT_COUNTER_WRAP_MARGIN, UNIT_HEAT_MAX_KW * hours):
+        if across <= most:
             # the counter started over
             return across
         return None
 
     @callback
     def async_update_reading(self, now: datetime, reading, use: str | None) -> None:
-        """Add the rise of the counter since the last reading to the use of the moment."""
+        """Add the rise of the counter since the last reading to the use of the moment.
+
+        A reading out of line with the last one is held back: now and then
+        the API returns, for a poll or two, an old copy of the unit's whole
+        status, counter included (230, 34, 230). When the next
+        reading is in line with the last one again, the stray value is dropped;
+        when it is in line with the stray value instead, the counter was reset,
+        and counting goes on from there.
+        """
         if not isinstance(reading, int) or isinstance(reading, bool) or reading < 0:
             return
         previous = self._last_reading
@@ -703,10 +717,20 @@ class UnitHeatCounter(ProducedEnergyCounter):
         if previous is not None and gap is not None and timedelta(0) <= gap <= UNIT_HEAT_COUNTER_MAX_GAP:
             kwh = self.rise(previous, reading, gap.total_seconds() / 3600)
             if kwh is None:
-                _LOGGER.debug("The unit's heat counter went from %s to %s: counting again from there", previous, reading)
-            elif kwh:
+                unconfirmed, self._unconfirmed = self._unconfirmed, None
+                held = unconfirmed is not None and now - unconfirmed[0] <= UNIT_HEAT_COUNTER_MAX_GAP
+                kwh = self.rise(unconfirmed[1], reading, (now - unconfirmed[0]).total_seconds() / 3600) if held else None
+                if kwh is None:
+                    _LOGGER.debug("The unit's heat counter went from %s to %s: waiting for the next reading", previous, reading)
+                    self._unconfirmed = (now, reading)
+                    return
+                _LOGGER.debug("The unit's heat counter went from %s to %s: counting again from there", previous, unconfirmed[1])
+            self._unconfirmed = None
+            if kwh:
                 self._add(float(kwh), use or "spaceHeating")
                 self.has_counted = True
+        else:
+            self._unconfirmed = None
         self._last_reading = reading
         self._last_time = now
         self._store.async_delay_save(self._data_to_save, ESTIMATE_SAVE_DELAY_S)

@@ -50,11 +50,20 @@ def coordinator_with(unit_heat, counter=None):
         (120, 5, None),
         # one step back near the top: no 249 kWh in a minute
         (245, 244, None),
+        # a stray reading between two of 230, seen in November 2026: no 196 kWh in a minute either
+        (230, 34, None),
+        (34, 230, None),
     ],
 )
 def test_rise_of_the_counter(previous, reading, rise):
     """The rise between two readings a minute apart, across the counter starting over."""
     assert UnitHeatCounter.rise(previous, reading, 1 / 60) == rise
+
+
+def test_the_counter_rose_a_lot_during_an_outage():
+    """34, then 230 eight hours later: 196 kWh, as the unit can make that much in that time."""
+    assert UnitHeatCounter.rise(34, 230, 8) == 196
+    assert UnitHeatCounter.rise(34, 230, 0.5) is None
 
 
 def test_the_counter_went_round_during_an_outage():
@@ -103,6 +112,28 @@ async def test_a_reset_or_a_long_gap_starts_counting_again(hass, hass_storage):
     later = local(23, 8, 10) + timedelta(hours=30)
     counter.async_update_reading(later, 200, "spaceHeating")
     assert counter.energy("today", None, later) == 0
+
+
+@pytest.mark.parametrize("stray", [34, 100, 120])
+async def test_a_stray_reading_is_dropped(hass, hass_storage, stray):
+    """230, a stray value for one poll, then 230 again and on: only the real rise is counted."""
+    counter = UnitHeatCounter(hass, "entry")
+    counter.async_update_reading(local(23, 8, 0), 228, "spaceHeating")
+    counter.async_update_reading(local(23, 8, 1), 230, "spaceHeating")
+    counter.async_update_reading(local(23, 8, 2), stray, "spaceHeating")
+    counter.async_update_reading(local(23, 8, 3), 231, "spaceHeating")
+    counter.async_update_reading(local(23, 8, 4), 232, "spaceHeating")
+    assert counter.energy("today", None, local(23, 8, 4)) == 4
+
+
+async def test_a_reset_is_followed_once_two_readings_agree(hass, hass_storage):
+    """120, then 5 and 7: the counter was reset; the rise from 5 is counted."""
+    counter = UnitHeatCounter(hass, "entry")
+    counter.async_update_reading(local(23, 8, 0), 120, "spaceHeating")
+    counter.async_update_reading(local(23, 8, 1), 5, "spaceHeating")
+    counter.async_update_reading(local(23, 8, 2), 7, "spaceHeating")
+    counter.async_update_reading(local(23, 8, 3), 8, "spaceHeating")
+    assert counter.energy("today", None, local(23, 8, 3)) == 3
 
 
 async def test_readings_that_are_not_a_counter_are_ignored(hass, hass_storage):
